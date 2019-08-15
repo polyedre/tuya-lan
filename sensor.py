@@ -37,24 +37,23 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     add_entities(sensors)
 
 class TuyaPlug(Entity):
-    """Representation of a Sensor."""
+    """Representation of a Tuya plug sensor."""
+
+    number_of_plug = 0
 
     def __init__(self, device_id, ip_address, local_key):
         """Initialize the sensor."""
-        self._state = None
+        self.error_state = 'Not detected'
+        self._state = self.error_state
         self.identifiants = device_id, ip_address, local_key
         self.reconnect()
         self._device_class = DEVICE_CLASS_POWER
-        self.device.connection_timeout = 100
-        try:
-            self.data = self.device.status()
-        except:
-            self.data = {'dps': {'19': 0}}
+        TuyaPlug.number_of_plug += 1
 
     @property
     def name(self):
         """Return the name of the sensor."""
-        return 'Tuya Plug'
+        return 'Tuya Plug {}'.format(TuyaPlug.number_of_plug)
 
     @property
     def state(self):
@@ -67,21 +66,25 @@ class TuyaPlug(Entity):
         return POWER_WATT
 
     def update(self):
-        """Fetch new state data for the sensor.
-        This is the only method that should fetch new data for Home Assistant.
-        """
-        try:
-            self.data = self.device.status()
-            _LOGGER.debug(self.data)
-        except ConnectionResetError:
-            self.reconnect()
-            _LOGGER.info("Failed fetching data")
-        finally:
-            self.data = self.device.status()
-        self._state = self.get_power()
+        """Fetch new state data for the plug """
+        self.data = {}
+        for _ in range(3):
+            try:
+                self.data = self.device.status()
+                _LOGGER.debug(self.data)
+                break
+            except ConnectionResetError:
+                _LOGGER.info("Failed fetching data, reconnecting...")
+                self.reconnect()
+        if self.data:
+            self._state = self.get_power()
+        else:
+            self._state = self.error_state
 
     def get_power(self):
+        """Return the power in Watts"""
         return self.data['dps']['19'] / 10
 
     def reconnect(self):
+        """Reconnects to the Device"""
         self.device = OutletDevice(*self.identifiants)
