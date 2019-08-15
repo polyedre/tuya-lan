@@ -1,0 +1,8 @@
+{
+  "domain": "tuya_lan",
+  "name": "Tuya Integration using LAN",
+  "documentation": "https://github.com/clach04/python-tuya",
+  "dependencies": [],
+  "codeowners": ["@polyedre"],
+  "requirements": ["crypto", "pyaes", "pytuya"]
+}
