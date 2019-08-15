@@ -1,0 +1,40 @@
+#+TITLE: Tuya-lan
+
+A component to integrate Tuya devices to Home Assistant without relying on Tuya's servers.
+
+* Getting Started
+
+Copy =__init__.py=, =manifest.json=, =sensor.py= and =switch.py= in your Home Assistant configuration folder as below:
+
+```
+.homeassistant
+├── automations.yaml
+├── configuration.yaml
+├── custom_components
+│   └── tuya_lan
+│       ├── __init__.py
+│       ├── manifest.json
+│       ├── sensor.py
+│       └── switch.py
+```
+
+Add to =configuration.yaml=:
+
+```
+sensor:
+  - platform: tuya_lan
+    sensors:
+      mesuring:
+        device_id: '<device_id>'
+        api_key: '<local_key>'
+        ip_address: '<ip_address>'
+        platform: test # don't really know why it is required
+```
+
+* Contributing
+
+Any pull request is welcome !
+
+* License
+
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
