@@ -24,12 +24,8 @@ Add to =configuration.yaml=:
 #+BEGIN_EXAMPLE
 sensor:
   - platform: tuya_lan
-    sensors:
-      mesuring:
-        device_id: '<device_id>'
-        api_key: '<local_key>'
-        ip_address: '<ip_address>'
-        platform: test # don't really know why it is required
+    wifi_ssid: "<your_wifi_ssid>"
+    wifi_password: "<your_wifi_password>"
 #+END_EXAMPLE
 
 You can get the =device_id= and the =local_key= by following [[https://github.com/codetheweb/tuyapi/blob/master/docs/SETUP.md][this guide]].

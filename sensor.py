@@ -38,15 +38,10 @@ log = logging.getLogger(__name__)
 _LOGGER = logging.getLogger(__name__)
 
 # Validation of the user's configuration
-SENSOR_SCHEMA = PLATFORM_SCHEMA.extend({
-    vol.Required(CONF_IP_ADDRESS): cv.string,
-    vol.Required(CONF_DEVICE_ID): cv.string,
-    vol.Required(CONF_API_KEY): cv.string,
+PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
+    vol.Required("wifi_ssid"): cv.string,
+    vol.Required("wifi_password"): cv.string,
 })
-
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {vol.Required(CONF_SENSORS): cv.schema_with_slug_keys(SENSOR_SCHEMA)}
-)
 
 def setup_platform(hass, config, add_entities,
                                discovery_info=None):
@@ -54,6 +49,10 @@ def setup_platform(hass, config, add_entities,
 
     sensors = []
     _LOGGER.debug("Setuping Tuya Sensors")
+
+    global WIFI_SSID, WIFI_PASSWORD
+    WIFI_SSID = config['wifi_ssid']
+    WIFI_PASSWORD = config['wifi_password']
 
     start_background_process()
     time.sleep(10)
@@ -133,7 +132,7 @@ class TuyaPlug(Entity):
                 # _LOGGER.debug(self.data)
                 break
             except ConnectionResetError:
-                _LOGGER.debug("Failed fetching data for %s, reconnecting...", self.name())
+                _LOGGER.debug("Failed fetching data for %s, reconnecting...", self.name)
                 self.reconnect()
         if self.data:
             # _LOGGER.debug("New data fetched : ", self.data)
@@ -824,6 +823,7 @@ class TuyaProvision(aio.DatagramProtocol):
 
 def sync_plugs(call):
     tuya = TuyaCloud("basic@email.com", "random_pass")
+    _LOGGER.debug("%s %s", WIFI_SSID, WIFI_PASSWORD)
     prov = TuyaProvision(tuya, WIFI_SSID, WIFI_PASSWORD)
     loop = aio.new_event_loop()
     aio.set_event_loop(loop)
