@@ -4,7 +4,12 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.components.sensor import PLATFORM_SCHEMA
 from pytuya import OutletDevice
 from homeassistant.const import POWER_WATT, DEVICE_CLASS_POWER
-from homeassistant.const import CONF_IP_ADDRESS, CONF_DEVICE_ID, CONF_API_KEY, CONF_SENSORS
+from homeassistant.const import (
+    CONF_IP_ADDRESS,
+    CONF_DEVICE_ID,
+    CONF_API_KEY,
+    CONF_SENSORS,
+)
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 import logging
@@ -22,11 +27,13 @@ import time
 import csv
 import threading
 
-SENSORS_FILE = os.environ['HOME'] + "/.homeassistant/custom_components/tuya_lan/.sensors.txt"
+SENSORS_FILE = (
+    os.environ["HOME"] + "/.homeassistant/custom_components/tuya_lan/.sensors.txt"
+)
 
 # You have to change this
-WIFI_SSID = ''
-WIFI_PASSWORD = ''
+WIFI_SSID = ""
+WIFI_PASSWORD = ""
 
 MAXNORESP = 5
 DFLTPORT = 6668
@@ -38,21 +45,20 @@ log = logging.getLogger(__name__)
 _LOGGER = logging.getLogger(__name__)
 
 # Validation of the user's configuration
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
-    vol.Required("wifi_ssid"): cv.string,
-    vol.Required("wifi_password"): cv.string,
-})
+PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
+    {vol.Required("wifi_ssid"): cv.string, vol.Required("wifi_password"): cv.string}
+)
 
-def setup_platform(hass, config, add_entities,
-                               discovery_info=None):
+
+def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the sensor platform."""
 
     sensors = []
     _LOGGER.debug("Setuping Tuya Sensors")
 
     global WIFI_SSID, WIFI_PASSWORD
-    WIFI_SSID = config['wifi_ssid']
-    WIFI_PASSWORD = config['wifi_password']
+    WIFI_SSID = config["wifi_ssid"]
+    WIFI_PASSWORD = config["wifi_password"]
 
     start_background_process()
     time.sleep(10)
@@ -64,15 +70,17 @@ def setup_platform(hass, config, add_entities,
     new_sensors_entities = [TuyaPlug(*s) for s in new_sensors]
     add_entities(new_sensors_entities)
 
-    hass.services.register('tuya_lan', 'sync_plugs', sync_plugs)
+    hass.services.register("tuya_lan", "sync_plugs", sync_plugs)
+
 
 def load_registered_sensors():
     sensors = []
-    with open(SENSORS_FILE, 'r') as sensor_file:
+    with open(SENSORS_FILE, "r") as sensor_file:
         data = csv.reader(sensor_file)
         for ip_address, device_id, local_key in data:
             sensors.append((ip_address, device_id, local_key))
     return sensors
+
 
 class TuyaPlug(Entity):
     """Representation of a Tuya plug sensor."""
@@ -81,8 +89,10 @@ class TuyaPlug(Entity):
 
     def __init__(self, ip_address, device_id, local_key):
         """Initialize the sensor."""
-        _LOGGER.debug("Creating Plug(ip=%s, id=%s, key=%s)", ip_address, device_id, local_key)
-        self.error_state = 'Not detected'
+        _LOGGER.debug(
+            "Creating Plug(ip=%s, id=%s, key=%s)", ip_address, device_id, local_key
+        )
+        self.error_state = "Not detected"
         self._power = self.error_state
         self._voltage = self.error_state
         self._intensity = self.error_state
@@ -96,7 +106,7 @@ class TuyaPlug(Entity):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return 'Tuya Plug {}'.format(TuyaPlug.number_of_plug)
+        return "Tuya Plug {}".format(TuyaPlug.number_of_plug)
 
     @property
     def unit_of_measurement(self):
@@ -134,6 +144,9 @@ class TuyaPlug(Entity):
             except ConnectionResetError:
                 _LOGGER.debug("Failed fetching data for %s, reconnecting...", self.name)
                 self.reconnect()
+            except OSError as o:
+                _LOGGER.debug("No route to host %s", self.identifiants[1])
+                break
         if self.data:
             # _LOGGER.debug("New data fetched : ", self.data)
             self._power = self.get_power()
@@ -144,24 +157,30 @@ class TuyaPlug(Entity):
 
     def get_intensity(self):
         """Return the intensity in mA"""
-        return self.data['dps']['18'] / 10
+        return self.data["dps"]["18"] / 10
 
     def get_power(self):
         """Return the power in Watts"""
-        return self.data['dps']['19'] / 10
+        return self.data["dps"]["19"] / 10
 
     def get_voltage(self):
         """Return the voltage in V"""
-        return self.data['dps']['20'] / 10
+        return self.data["dps"]["20"] / 10
 
     def reconnect(self):
         """Reconnects to the Device"""
         self.device = OutletDevice(*self.identifiants)
 
-class TuyaException(Exception):
-    pass
 
-class TuyaCipher():
+class TuyaException(Exception):
+    """Default Tuya exception"""
+
+
+class TuyaCipher:
+    """
+    Tuya class to crypt and encrypt data.
+    The process is specific to Tuya.
+    """
 
     def __init__(self, key, version="3.1"):
         self.key = key
@@ -173,6 +192,7 @@ class TuyaCipher():
         self.cipher = AES.new(self.key, AES.MODE_ECB)
 
     def decrypt(self, rawdata):
+        """Decrypt data using AES"""
         if self.version:
             data = base64.b64decode(rawdata[19:])
         else:
@@ -180,33 +200,40 @@ class TuyaCipher():
 
         data = self.cipher.decrypt(data)
         try:
-            return json.loads(data[:data.rfind(b'}')+1])
+            return json.loads(data[: data.rfind(b"}") + 1])
         except:
             return data
 
     def encrypt(self, rawdata):
-        data=json.dumps(rawdata,separators=(',', ':')).encode()
-        if len(data)%16 :
-            pbyte = int.to_bytes(16 - len(data)%16, 1, "big")
-            data += pbyte * (16 - len(data)%16)
+        """Encrypt data using AES"""
+        data = json.dumps(rawdata, separators=(",", ":")).encode()
+        if len(data) % 16:
+            pbyte = int.to_bytes(16 - len(data) % 16, 1, "big")
+            data += pbyte * (16 - len(data) % 16)
 
         data = self.cipher.encrypt(data)
         if self.version:
             data = base64.b64encode(data)
         return data, self.md5(data)
 
-    def md5(self,data):
-        thisdata = b"data="+data+b"||lpv="+self.version+b"||"+self.key.encode()
+    def md5(self, data):
+        """Encrypt data using md5"""
+        thisdata = (
+            b"data=" + data + b"||lpv=" + self.version + b"||" + self.key.encode()
+        )
         return md5(thisdata).hexdigest().lower()[8:24].encode()
 
 
-class TuyaMessage():
+class TuyaMessage:
+    """Tuya class to parse and encode a message"""
 
-    def __init__(self, cipher = None):
+    def __init__(self, cipher=None):
         self.cipher = cipher
         self.leftover = ""
 
     def parse(self, data):
+        """Parse data to be send the Tuya way"""
+
         if data is None:
             raise TuyaException("No data to parse")
         if len(data) < 16:
@@ -218,148 +245,168 @@ class TuyaMessage():
         while processmsg:
             prefix = data[:4]
 
-            if prefix != b'\x00\x00\x55\xaa':
-                result.append((999,TuyaException("Incorrect prefix")))
+            if prefix != b"\x00\x00\x55\xaa":
+                result.append((999, TuyaException("Incorrect prefix")))
                 break
 
             suffix = data[-4:]
 
-            if suffix != b'\x00\x00\xaa\x55':
+            if suffix != b"\x00\x00\xaa\x55":
                 result.append((999, TuyaException("Incorrect suffix")))
                 break
 
             cmdbyte = data[11:12]
-            msgsize = int.from_bytes(data[12:16],"big")
+            msgsize = int.from_bytes(data[12:16], "big")
 
             if msgsize != len(data[12:-4]):
-                self.leftover = data[16+msgsize:]
-                data = data[:16+msgsize]
-                _LOGGER.debug("{} vs {}".format(msgsize,len(data[12:-4])))
+                self.leftover = data[16 + msgsize :]
+                data = data[: 16 + msgsize]
+                _LOGGER.debug("{} vs {}".format(msgsize, len(data[12:-4])))
                 _LOGGER.debug("Leftover is {}".format(self.leftover))
             else:
-                self.leftover = ''
+                self.leftover = ""
                 processmsg = False
 
-
-            #Removing Prefix, Msg size, also crc and suffix
+            # Removing Prefix, Msg size, also crc and suffix
             mydata = data[16:-8]
-            returncode = int.from_bytes(mydata[:4],"big")
+            returncode = int.from_bytes(mydata[:4], "big")
             # _LOGGER.debug("Return Code is {}".format(returncode))
             if returncode:
                 _LOGGER.debug("Error: {}".format(data))
-            #Removing 0x00 padding
+            # Removing 0x00 padding
             try:
-                while mydata[0:1] == b'\x00':
+                while mydata[0:1] == b"\x00":
                     mydata = mydata[1:]
             except:
-                #Empty message
+                # Empty message
                 result.append((returncode, None))
                 if self.leftover:
                     continue
                 else:
                     break
 
-            if self.cipher and cmdbyte != b'\x0a':
+            if self.cipher and cmdbyte != b"\x0a":
                 result.append((returncode, self.cipher.decrypt(mydata)))
             else:
-                #_LOGGER.debug("Loading {}".format(mydata[:mydata.decode().rfind('}')+1]))
+                # _LOGGER.debug("Loading {}".format(mydata[:mydata.decode().rfind('}')+1]))
                 try:
-                    result.append((returncode, json.loads(mydata.decode()[:mydata.decode().rfind('}')+1])))
+                    result.append(
+                        (
+                            returncode,
+                            json.loads(
+                                mydata.decode()[: mydata.decode().rfind("}") + 1]
+                            ),
+                        )
+                    )
                 except:
                     result.append((returncode, mydata))
         return result
 
     def encode(self, command, data):
+        """Encode data to be send the Tuya way"""
+
         if command == "get":
-            cmdbyte = b'\x0a'
-        elif command == 'set':
-            cmdbyte = b'\x07'
+            cmdbyte = b"\x0a"
+        elif command == "set":
+            cmdbyte = b"\x07"
         else:
             raise TuyaException("Unknown command")
 
         if isinstance(data, dict):
-            payload = json.dumps(data,separators=(',', ':')).encode()
+            payload = json.dumps(data, separators=(",", ":")).encode()
         elif isinstance(data, str):
             payload = data.encode()
-        elif isinstance(data,bytes):
+        elif isinstance(data, bytes):
             payload = data
         else:
             raise TuyaException("Don't know who to send {}".format(data.__class__))
 
-        prefix = b'\x00\x00\x55\xaa'+ b'\x00'*7 + cmdbyte
-        #CRC
-        payload += b'\x00'*4   #Apparently not checked, so we dpn't bother
-        #Suffix
-        payload += b'\x00\x00\xaa\x55'
+        prefix = b"\x00\x00\x55\xaa" + b"\x00" * 7 + cmdbyte
+        # CRC
+        payload += b"\x00" * 4  # Apparently not checked, so we dpn't bother
+        # Suffix
+        payload += b"\x00\x00\xaa\x55"
         try:
-            return prefix + int.to_bytes(len(payload),4,"big") + payload
-        except Exception as e:
-            _LOGGER.debug("Error was {}".format(e))
+            return prefix + int.to_bytes(len(payload), 4, "big") + payload
+        except Exception as exc:
+            _LOGGER.debug("Error was %s", exc)
             return None
 
 
-
-
 class TuyaScanner(aio.DatagramProtocol):
-    """This will monitor UDP broadcast from Tuya devices"""
+    """
+    This will monitor UDP broadcast from Tuya devices.
+    When a tuya device is added on a network (has been sync using a Tuya app or TuyaProvision),
+    it broadcast udp on port 6666. We just listen to it.
 
-    def __init__(self, parent= None,ip='0.0.0.0', port=6666):
+    Will notify data received to its parent (intended to be a TuyaManager).
+    """
+
+    def __init__(self, parent=None, ip="0.0.0.0", port=6666):
+
         self.ip = ip
         self.port = port
-        self.loop = None
         self.message = TuyaMessage()
-        self.task = None
         self.parent = parent
 
+        self.transport = None
+        self.loop = None
+        self.task = None
+
     def connection_made(self, transport):
-        _LOGGER.debug("Scanner Connected")
+        """A connection is made with a device."""
+
         self.transport = transport
-        sock = transport.get_extra_info("socket")  # type: socket.socket
-        #sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        #sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
     def datagram_received(self, rdata, addr):
-        resu =self.message.parse(rdata)
+        """Function ran when data is received"""
+
+        resu = self.message.parse(rdata)
         for code, data in resu:
             # _LOGGER.debug('broadcast received: {}'.format(data))
             if self.parent:
                 self.parent.notify(data)
 
     def start(self, loop):
-        """Starting the control of the device
-        """
+        """Starting the control of the device """
+
         self.loop = loop
         coro = self.loop.create_datagram_endpoint(
-            lambda: self, local_addr= (self.ip, self.port))
+            lambda: self, local_addr=(self.ip, self.port)
+        )
 
         self.task = self.loop.create_task(coro)
         return self.task
 
     def close(self):
+        """Close the connection"""
+
         if self.transport:
             self.transport.close()
             self.transport = None
 
 
 class TuyaManager:
-    """This class manages Tuya devices. It will create devices when notified,
-    if will also destroy and recreate them when the IP address changes. It will only create devices
-    for which it knows an encryption key
+    """
+    This class manages Tuya devices. It will create devices when notified, if
+    will also destroy and recreate them when the IP address changes. It will
+    only create devices for which it knows an encryption key
 
-    This works by looking for broadcast packets. If the device type is unknown, we start with a
-    generic TuyaDevice set with raw_dps, upon receiving a status we try to figure out what the device
-    actually is.
+    This works by looking for broadcast packets. If the device type is unknown,
+    we start with a generic TuyaDevice set with raw_dps, upon receiving a status
+    we try to figure out what the device actually is.
 
-    DEWARE  TuyaManager is used as parent for the generic TuyaDevice, so the method register will be called.
-    When overloading register, make sure you understand the consequences
+    BEWARE TuyaManager is used as parent for the generic TuyaDevice, so the
+    method register will be called. When overloading register, make sure you
+    understand the consequences
 
+    The argument `knowndevs` should be a dictionary. The key is the device id
+    and the value, the encryption key. dev_parent is the device parent, with
+    register/unregister/got_data methods
     """
 
-    def __init__(self, knowndevs={}, dev_parent = [], loop = None):
-        """ knowndevs should be a dictionary. The key is the device id
-            and the value, the encryption key. dev_parent is the device parent,
-            with register/unregister/got_data methods
-        """
+    def __init__(self, knowndevs={}, dev_parent=[], loop=None):
+
         self.known_devices = knowndevs
         self.running_devices = []
         self.pending_devices = {}
@@ -370,46 +417,44 @@ class TuyaManager:
         self.dev_parent = dev_parent
         self.load_keys()
 
-
-    def notify(self,data):
-        if all([ x in data for x in ["productKey", "ip", "gwId"] ]):
+    def notify(self, data):
+        """
+        Receive data from childrens.
+        Children are meant to be TuyaScanners
+        """
+        # Check we have all informations
+        if all([x in data for x in ["productKey", "ip", "gwId"]]):
             device = data["ip"], data["gwId"], data["productKey"]
-
+            # Add device only if it exist
             self.upsert_device(device)
-        # _LOGGER.debug(self.running_devices)
 
     def upsert_device(self, new_device):
+        """Add device only if it exist"""
+
         for i, dev in enumerate(self.running_devices):
             if dev[1] == new_device[1]:
                 self.running_devices[i] = new_device
-                return
+                return  # Just update
         self.running_devices.append(new_device)
         self.save_sensors()
 
     def save_sensors(self):
-        with open(SENSORS_FILE, 'w') as sensor_file:
+        """Save sensor in csv format to SENSOR_FILE"""
+
+        with open(SENSORS_FILE, "w") as sensor_file:
             data = csv.writer(sensor_file)
             for sensor in self.running_devices:
                 _LOGGER.debug("New sensor saved")
                 data.writerow(sensor)
 
-    def register(self,dev):
-        #Avoid overloading.... it will run when a "pending" device connects
+    def register(self, dev):
         pass
 
-    def unregister(self,dev):
-        #Just delete the pending id
-        try:
-            del(self.pending_devices[dev.devid])
-        except:
-            pass
+    def unregister(self, dev):
+        pass
 
     def new_key(self, devid, key):
-        self.known_devices[devid] = key
-        if devid in self.ignore_devices:
-            self.ignore_devices.remove(devid)
-        self.persist_keys()
-
+        pass
 
     def persist_keys(self):
         pass
@@ -417,69 +462,82 @@ class TuyaManager:
     def load_keys(self):
         pass
 
-
-    def got_data(self,data):
+    def got_data(self, data):
         """We are trying to figure out the device type"""
-        if "devId" not in data: #Ooops
+
+        if "devId" not in data:  # Ooops
             return
 
         if data["devId"] not in self.pending_devices:
-            _LOGGER.debug("Oops, devid {} should not sent data here.".format(data["devId"]))
+            _LOGGER.debug(
+                "Oops, devid {} should not sent data here.".format(data["devId"])
+            )
             return
 
         tclass = None
         discdev = self.pending_devices[data["devId"]]
 
         if tclass:
-            newdev = tclass(discdev.devid, self.known_devices[discdev.devid],discdev.ip, parent = self.dev_parent, vers=self.version_devices[data["devId"]])
+            newdev = tclass(
+                discdev.devid,
+                self.known_devices[discdev.devid],
+                discdev.ip,
+                parent=self.dev_parent,
+                vers=self.version_devices[data["devId"]],
+            )
             self.running_devices[newdev.devid] = newdev
             newdev.start(self.loop)
         else:
             _LOGGER.debug("No match for {}".format(data))
-        self.pending_devices[data["devId"]].seppuku()
-        del(self.pending_devices[data["devId"]])
+        self.pending_devices[data["devId"]].close()
+        del self.pending_devices[data["devId"]]
 
     def got_error(self, dev, data):
-        """Looks like we got a problem. Given how we do things, this must be from one of the pending
-        devices, i.e. some generic device. Let's try to send a command to see if that fix things."""
-        _LOGGER.debug("Got error from {}: {}".format(dev.devid,data))
+        """
+        Looks like we got a problem. Given how we do things, this must be from
+        one of the pending devices, i.e. some generic device. Let's try to send
+        a command to see if that fix things.
+        """
+
+        _LOGGER.debug("Got error from {}: {}".format(dev.devid, data))
+
         if dev.devid not in self.error_device:
             self.error_device[dev.devid] = 0
-            #Only the first time around
-            dev.raw_set({'1':False})
+            # Only the first time around
+            dev.raw_set({"1": False})
         elif self.error_device[dev.devid] == 1:
-            #Try the second time around
-            dev.raw_set({'1':'3'})
+            # Try the second time around
+            dev.raw_set({"1": "3"})
 
         self.error_device[dev.devid] += 1
-        if self.error_device[dev.devid]>=5:
+        if self.error_device[dev.devid] >= 5:
             try:
                 _LOGGER.debug("Done trying with {}".format(dev.devid))
                 self.ignore_devices.append(dev.devid)
-                self.pending_devices[dev.devid].seppuku()
-                del(self.error_device[dev.devid])
+                self.pending_devices[dev.devid].close()
+                del self.error_device[dev.devid]
             except Exception as e:
                 _LOGGER.debug("Error disabling dev {}, {}".format(dev.devid, e))
 
-
-
     def close(self):
+        """Close the connection"""
+
         _LOGGER.debug("On closing we have:")
         _LOGGER.debug("           running : {}".format(self.running_devices))
         _LOGGER.debug("           pending : {}".format(self.pending_devices))
         _LOGGER.debug("          ignoring : {}".format(self.ignore_devices))
         for x in self.pending_devices.values():
-            x.seppuku()
+            x.close()
         for x in self.running_devices.values():
-            x.seppuku()
+            x.close()
+
 
 def fetch_devices():
     """Start the listening process"""
+
     logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(levelname)7s: %(message)s',
-            stream=sys.stderr,
-        )
+        level=logging.DEBUG, format="%(levelname)7s: %(message)s", stream=sys.stderr
+    )
     loop = aio.new_event_loop()
     aio.set_event_loop(loop)
     manager = TuyaManager()
@@ -493,14 +551,17 @@ def fetch_devices():
         loop.run_until_complete(aio.sleep(2))
         pass
 
+
 def start_background_process():
+    """Start a background process of function `fetch_devices`"""
+
     logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(levelname)7s: %(message)s',
-            stream=sys.stderr,
-        )
+        level=logging.DEBUG, format="%(levelname)7s: %(message)s", stream=sys.stderr
+    )
+
     t = threading.Thread(target=fetch_devices)
     t.start()
+
 
 import asyncio as aio
 import socket
@@ -508,60 +569,106 @@ import json
 import math
 from hashlib import md5
 from collections import OrderedDict
-import aiohttp, random,string
+import aiohttp, random, string
 import logging
 
 PORT = 6668
 RPORT = 63145
 ADDRESS = ("255.255.255.255", 30011)
 
-APIKEY='kqnykr87uwxn99wcyjvk'
-APISECRET = 'm5tsnq9998wjdgunak9upxnyftg873jj'
+APIKEY = "kqnykr87uwxn99wcyjvk"
+APISECRET = "m5tsnq9998wjdgunak9upxnyftg873jj"
 
-REGIONMATCH={"america":"AZ","asia":"AY","europe":"EU"}
-REGIONURL = {"AZ": 'https://a1.tuyaus.com/api.json',
-             'AY': 'https://a1.tuyacn.com/api.json',
-             'EU': 'https://a1.tuyaeu.com/api.json'}
-SIGNKEY = [ 'a', 'v', 'lat', 'lon', 'lang', 'deviceId', 'imei',
-            'imsi', 'appVersion', 'ttid', 'isH5', 'h5Token', 'os',
-            'clientId', 'postData', 'time', 'n4h5', 'sid', 'sp']
+REGIONMATCH = {"america": "AZ", "asia": "AY", "europe": "EU"}
+REGIONURL = {
+    "AZ": "https://a1.tuyaus.com/api.json",
+    "AY": "https://a1.tuyacn.com/api.json",
+    "EU": "https://a1.tuyaeu.com/api.json",
+}
+SIGNKEY = [
+    "a",
+    "v",
+    "lat",
+    "lon",
+    "lang",
+    "deviceId",
+    "imei",
+    "imsi",
+    "appVersion",
+    "ttid",
+    "isH5",
+    "h5Token",
+    "os",
+    "clientId",
+    "postData",
+    "time",
+    "n4h5",
+    "sid",
+    "sp",
+]
 
 log = logging.getLogger(__name__)
 
+
 class TuyaCloud(object):
-    """This class describe the minimum needed to interact
-    with TuYa cloud so we can link devices
     """
-    def __init__(self, email, passwd, region = "america", tz = "+00:00", apikey = APIKEY, apisecret = APISECRET):
+    This class describe the minimum needed to interact with TuYa cloud so we can
+    link devices
+    """
+
+    def __init__(
+        self,
+        email,
+        passwd,
+        region="america",
+        tz="+00:00",
+        apikey=APIKEY,
+        apisecret=APISECRET,
+    ):
+
         try:
             self.region = REGIONMATCH[region.lower()]
         except:
-            raise Exception("Error: Region must be one of {}, not {}".format(REGIONMATCH.keys(),region))
+            raise Exception(
+                "Error: Region must be one of {}, not {}".format(
+                    REGIONMATCH.keys(), region
+                )
+            )
 
         if len(apikey) != 20:
-            raise Exception("Error: API Key must be 20 char long, it is {}.".format(len(apikey)))
+            raise Exception(
+                "Error: API Key must be 20 char long, it is {}.".format(len(apikey))
+            )
+
         self.key = apikey
 
         if len(apisecret) != 32:
-            raise Exception("Error: API Key must be 32 char long, it is {}.".format(len(apikey)))
+            raise Exception(
+                "Error: API Key must be 32 char long, it is {}.".format(len(apikey))
+            )
 
         self.secret = apisecret
+
         self.email = email
         self.password = passwd
         self.tz = tz
         self.sessionid = None
-        self.deviceid = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(44))
-        self.token = ''
-        self.tokensecret = ''
-
+        self.deviceid = "".join(
+            random.choice(string.ascii_lowercase + string.digits) for _ in range(44)
+        )
+        self.token = ""
+        self.tokensecret = ""
 
     async def _request(self, command, data):
+        """Send a request to Tuya"""
 
         def shufflehash(data):
+
             prehash = md5(data.encode()).hexdigest()
             return prehash[8:16] + prehash[0:8] + prehash[24:32] + prehash[16:24]
 
         def sortOD(od):
+
             res = OrderedDict()
             for k, v in sorted(od.items()):
                 if isinstance(v, dict):
@@ -570,14 +677,16 @@ class TuyaCloud(object):
                     res[k] = v
             return res
 
-        rawdata = {"a": command,
-                 "deviceId": data.get("deviceId",self.deviceid),
-                 "os": 'Linux',
-                 "lang": 'en',
-                 "v": '1.0',
-                 "clientId": self.key,
-                 "time": round(time()),
-                 "postData": json.dumps(data,separators=(',', ':'))}
+        rawdata = {
+            "a": command,
+            "deviceId": data.get("deviceId", self.deviceid),
+            "os": "Linux",
+            "lang": "en",
+            "v": "1.0",
+            "clientId": self.key,
+            "time": round(time.time()),
+            "postData": json.dumps(data, separators=(",", ":")),
+        }
 
         if self.sessionid:
             rawdata["sid"] = self.sessionid
@@ -589,7 +698,7 @@ class TuyaCloud(object):
             if key not in SIGNKEY or not rawdata[key]:
                 continue
             tosign += key + "="
-            if key == 'postData':
+            if key == "postData":
                 tosign += shufflehash(rawdata[key])
             else:
                 tosign += str(rawdata[key])
@@ -602,79 +711,95 @@ class TuyaCloud(object):
                 rdata = json.loads(rdata)
 
         if not rdata["success"]:
-            myex = Exception("Error in request: Code: {}, Message: {}".format(rdata["errorCode"], rdata["errorMsg"]))
+            myex = Exception(
+                "Error in request: Code: {}, Message: {}".format(
+                    rdata["errorCode"], rdata["errorMsg"]
+                )
+            )
             myex.errcode = rdata["errorCode"]
             raise myex
         log.debug("Response to cloud request: {}".format(rdata["result"]))
         return rdata["result"]
 
-
     async def login(self):
-        data = {"countryCode": self.region,
-                "email": self.email,
-                "passwd": md5(self.password.encode()).hexdigest()}
 
-        resu = await self._request( 'tuya.m.user.email.password.login',data)
+        data = {
+            "countryCode": self.region,
+            "email": self.email,
+            "passwd": md5(self.password.encode()).hexdigest(),
+        }
+
+        resu = await self._request("tuya.m.user.email.password.login", data)
         self.sessionid = resu["sid"]
         return resu
 
     async def register(self):
-        data = {"countryCode": self.region,
-                "email": self.email,
-                "passwd": md5(self.password.encode()).hexdigest()}
 
-        resu = await self._request( 'tuya.m.user.email.register',data)
+        data = {
+            "countryCode": self.region,
+            "email": self.email,
+            "passwd": md5(self.password.encode()).hexdigest(),
+        }
+
+        resu = await self._request("tuya.m.user.email.register", data)
         self.sessionid = resu["sid"]
         return resu
 
     async def newtoken(self):
+
         data = {"timeZone": self.tz}
-        resu = await self._request( 'tuya.m.device.token.create',data)
-        self.token = resu['token']
-        self.tokensecret = resu['secret']
-        #log.debug("Got new token: {}".format(resu))
+        resu = await self._request("tuya.m.device.token.create", data)
+        self.token = resu["token"]
+        self.tokensecret = resu["secret"]
         return resu
 
     async def listtoken(self):
+
         data = {"token": self.token}
-        resu = await self._request('tuya.m.device.list.token',data)
-        #log.debug("Got token list: {}".format(resu))
+        resu = await self._request("tuya.m.device.list.token", data)
         return resu
 
 
-
 class TuyaProvision(aio.DatagramProtocol):
+    def __init__(self, tuya=None, ssid=None, passphrase=None):
 
-    def __init__(self, tuya = None, ssid = None, passphrase = None):
         self.target = ADDRESS
-        self.loop = None
         self.tuya = tuya
         self.ssid = ssid
         self.passphrase = passphrase
         self.abortbroadcast = False
+
         self.provisiondata = []
         self.devices = []
+        self.loop = None
         self.task = None
 
     def connection_made(self, transport: aio.transports.DatagramTransport):
-        #log.debug('started')
+        """Function ran when a connection with Tuya is made"""
+
         self.transport = transport
-        sock = transport.get_extra_info("socket")  # type: socket.socket
+        sock = transport.get_extra_info("socket")
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self.loop.create_task(self._provision_devices())
 
     async def _provision_devices(self):
+        """Sync a device. The device has to be in sync mode."""
+
         await self._tuya_login()
         if not self.provisiondata:
-            self.loop.create_task(self.seppuku())
+            self.loop.create_task(self.close())
             return
 
+        # Start sending udp packets in broadcast
         await self.startbroadcast()
+        # wait for a response
         self.loop.create_task(self.waitinfo())
         await self.sendlinkdata()
 
     async def _tuya_login(self):
+        """Find a way to get Tuya token"""
+
         try:
             try:
                 resu = await self.tuya.login()
@@ -682,11 +807,13 @@ class TuyaProvision(aio.DatagramProtocol):
                 resu = await self.tuya.register()
             resu = await self.tuya.newtoken()
         except:
-            await self.seppuku()
+            await self.close()
             return
         self.provisiondata = self._make_linkdata()
 
     async def waitinfo(self):
+        """Wait information from Tuya"""
+
         cnt = 5
         for x in range(200):
             lodevs = await self.tuya.listtoken()
@@ -701,29 +828,32 @@ class TuyaProvision(aio.DatagramProtocol):
                 break
             elif len(self.devices):
                 cnt -= 1
-        self.register()
-        await self.seppuku()
 
-    def register(self):
-        log.debug(self.devices)
+        await self.close()
 
     def datagram_received(self, data, addr):
-        #We are not expecting data
-        #log.debug('data received:', data, addr)
         pass
 
     async def startbroadcast(self):
+        """Broadcast specific udp packets"""
+
         for x in range(144):
+
             for s in [1, 3, 6, 10]:
-                string="\x00"*s
+                string = "\x00" * s
                 self.transport.sendto(string.encode(), self.target)
-            await aio.sleep(((x % 8) + 33)/1000.0)
+
+            await aio.sleep(((x % 8) + 33) / 1000.0)
+
             if self.abortbroadcast:
                 log.debug("Broadcast aborted")
                 break
+
         log.debug("Broadcast done")
 
     async def sendlinkdata(self):
+        """Send specific data"""
+
         delay = 0
         for x in range(30):
             if self.abortbroadcast:
@@ -733,9 +863,9 @@ class TuyaProvision(aio.DatagramProtocol):
                 delay = 6
 
             for s in self.provisiondata:
-                string="\x00"*s
+                string = "\x00" * s
                 self.transport.sendto(string.encode(), self.target)
-                await aio.sleep(delay/1000.0)
+                await aio.sleep(delay / 1000.0)
 
             await aio.sleep(0.2)
             delay += 3
@@ -743,6 +873,7 @@ class TuyaProvision(aio.DatagramProtocol):
         self.abortbroadcast = False
 
     def _make_linkdata(self):
+        """Create the data that will be send"""
 
         def docrc(data):
             crc = 0
@@ -753,7 +884,7 @@ class TuyaProvision(aio.DatagramProtocol):
         def docrc1Byte(abyte):
             crc1Byte = 0
             for i in range(8):
-                if ( crc1Byte ^ abyte ) & 0x01 > 0:
+                if (crc1Byte ^ abyte) & 0x01 > 0:
                     crc1Byte ^= 0x18
                     crc1Byte >>= 1
                     crc1Byte |= 0x80
@@ -763,11 +894,14 @@ class TuyaProvision(aio.DatagramProtocol):
 
             return crc1Byte
 
-        barray=bytearray(1)+self.passphrase.encode()
+        barray = bytearray(1) + self.passphrase.encode()
         clen = len(barray)
-        barray[0] = clen-1
-        lenpass = clen -1
-        barray += bytearray(1) + (self.tuya.region+self.tuya.token+self.tuya.tokensecret).encode()
+        barray[0] = clen - 1
+        lenpass = clen - 1
+        barray += (
+            bytearray(1)
+            + (self.tuya.region + self.tuya.token + self.tuya.tokensecret).encode()
+        )
         barray[clen] = len(barray) - clen - 1
         lenrts = len(barray) - clen - 1
         clen = len(barray)
@@ -794,36 +928,41 @@ class TuyaProvision(aio.DatagramProtocol):
             crcdata = []
             crcdata.append(seqcnt)
             for idx in range(4):
-                crcdata.append(barray[edidx] if edidx < rlen else  0)
+                crcdata.append(barray[edidx] if edidx < rlen else 0)
                 edidx += 1
             crc = docrc(crcdata)
             edata.append((crc % 128) | 128)
 
             edata.append((seqcnt % 128) | 128)
-            #data
+            # data
             for idx in range(4):
-                edata.append((crcdata[idx+1] % 256) | 256)
+                edata.append((crcdata[idx + 1] % 256) | 256)
             seqcnt += 1
         log.debug("Link data is: {}".format(edata))
         return edata
 
     def start(self, loop):
+        """Start the TuyaProvision"""
+
         self.loop = loop
         coro = self.loop.create_datagram_endpoint(
-            lambda: self, local_addr=('0.0.0.0', RPORT))
+            lambda: self, local_addr=("0.0.0.0", RPORT)
+        )
 
         self.task = self.loop.create_task(coro)
         return self.task
 
-    async def seppuku(self):
+    async def close(self):
+        """Close the connection"""
         self.abortbroadcast = True
         await aio.sleep(1)
         self.transport.close()
-        #log.debug("Dying")
+
 
 def sync_plugs(call):
     tuya = TuyaCloud("basic@email.com", "random_pass")
     _LOGGER.debug("%s %s", WIFI_SSID, WIFI_PASSWORD)
+    _LOGGER.debug("Script ran")
     prov = TuyaProvision(tuya, WIFI_SSID, WIFI_PASSWORD)
     loop = aio.new_event_loop()
     aio.set_event_loop(loop)
